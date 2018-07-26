@@ -1,25 +1,147 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "PA1_template"
+author: "Tuomas Hjelt"
+date: "26.7.2018"
+output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+```
 
-## Loading and preprocessing the data
+# Course Project 1
 
+## Load the data and convert date column to proper type 
+Loads the needed libraries.
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+```
+
+Reads the csv file to a variable while filtering out missing steps-values and converting date-column to proper type.
+```{r}
+data_no_na <- read.csv("activity.csv", header = TRUE, sep = ",") %>%
+        filter(!is.na(steps)) %>%
+        mutate(date = as.Date(as.character(date), format = "%Y-%m-%d"))
+```
 
 
 ## What is mean total number of steps taken per day?
+Summarizes total steps per date and assigns it to a variable.
+```{r}
+stepsperday <- data_no_na %>%
+      group_by(date) %>%
+      summarize(total_steps = sum(steps))
+```
 
+Draws a histogram of total number of steps per day.
+```{r}
+hist(stepsperday$total_steps, main="Histogram of total number of steps per day", 
+     xlab="Total number of steps per day")
+```
 
+Calculates the mean and median of total steps per day.
+```{r}
+mean(stepsperday$total_steps)
+median(stepsperday$total_steps)
+```
 
 ## What is the average daily activity pattern?
+Summarizes the mean of steps per interval.
+```{r}
+average_steps <- data_no_na %>%
+      group_by(interval) %>%
+      summarize(avg_steps = mean(steps))
+```
 
+Draws a time series plot of average number of steps per interval.
+```{r}
+plot(average_steps$interval, average_steps$avg_steps, type = "l", main = "Average number of steps per interval",
+      xlab = "Time intervals", ylab = "Average number of steps")
+```
 
+Finds the 5-minute interval that contains the maximum number of steps.
+```{r}
+average_steps %>% 
+      filter(avg_steps == max(average_steps$avg_steps)) %>% 
+      select(interval)
+```
 
 ## Imputing missing values
+Reads the data with missing values.
+```{r}
+data <- read.csv("activity.csv", header = TRUE, sep = ",") %>%
+  mutate(date = as.Date(as.character(date), format = "%Y-%m-%d"))
+```
 
+Counts the total number of missing values.
+```{r}
+data %>% filter(is.na(steps)) %>% summarize(total_missing_rows = n())
+```
 
+### Replace the missing NA values with the average steps in that interval across all the days
+I decided to replace the missing NA values with the average steps in that interval across all the days. First I summarized the average steps per interval into a new variable.
+```{r}
+stepsperinterval <- data_no_na %>%
+  group_by(interval) %>%
+  summarize(avg_steps = mean(steps))
+```
+
+Copies the original dataset and loops through it. When it finds a missing value it gets the average step count according to the right interval from the just created dataset.
+```{r}
+data_imputed <- data
+for (i in 1:nrow(data_imputed))
+{
+  if(is.na(data_imputed$steps[i]))
+  {
+    imp_value <- stepsperinterval$avg_steps[which(stepsperinterval$interval == data_imputed$interval[i])]
+    data_imputed$steps[i] <- imp_value
+  }
+}
+```
+
+Summarizes the imputed date by calculating the sum of steps per date.
+```{r}
+stepsperday_imputed <- data_imputed %>%
+  group_by(date) %>%
+  summarize(total_steps = sum(steps))
+```
+
+DraWs a histogram of total number of steps per day with the imputed data.
+```{r}
+hist(stepsperday_imputed$total_steps, main="Histogram of total number of steps per day (imputed data)", 
+     xlab="Total number of steps per day")
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+Creates a function to separate weekdays and weekends. (my locale is Finnish so days are also in Finnish)
+```{r}
+weekday_part <- function(date_val) {
+  x <- weekdays(date_val)
+  if (x == "lauantai" || x == "sunnuntai") {
+    ret_val <- "Weekend"
+  }
+  else {
+    ret_val <- "Weekday"
+  }
+  ret_val
+}
+```
+
+Uses sapply to loop through the dates and assigns a new column for the day type. Then summarizes the average steps per interval and day type.
+```{r}
+data_imputed$day_type <- as.factor(sapply(data_imputed$date, weekday_part))
+stepsperday_imputed_wk <- data_imputed %>% group_by(interval, day_type) %>% summarize(avg_steps = mean(steps))
+```
+
+Draws two graphs to find differences between weekdays and weekends. 
+```{r}
+p <- ggplot(stepsperday_imputed_wk, aes(interval,avg_steps)) +
+  geom_line(stat = "identity", aes(colour = day_type)) +
+  theme_bw() +
+  facet_grid(day_type ~ .) +
+  labs(x = "Interval", y = "Number of steps") +
+  ggtitle("Number of steps per interval per day type")
+print(p)
+```
+There seems to be some variation between them, especially during the mornings where more steps are been taken on weekdays.
